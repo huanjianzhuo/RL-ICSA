@@ -1,0 +1,15 @@
+# ===========================================================================
+# Project:      ADRL - Adversarial Deep Reinforcement Learning
+# File:         requirements.txt
+# Description:  项目依赖包
+# ===========================================================================
+
+torch>=1.12.0
+torchvision>=0.13.0
+torchmetrics>=0.9.0
+numpy>=1.21.0
+tqdm>=4.64.0
+matplotlib>=3.5.0
+Pillow>=8.3.0
+
+
