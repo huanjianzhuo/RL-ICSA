@@ -32,18 +32,12 @@ def get_attack(attack_name: str, clients: List, config: Dict[str, Any], runner_i
         攻击实例
     """
     attacks = {
-        'no_attack': NoAttack,
         'none': NoAttack,
-        'gaussian': GaussianAttack,
         'lie': LIEAttack,
         'qlearning': QLearningAttack,
-        'poisonedfl': PoisonedFLAttack,
-        'fang': FangAttack,
         'minmax': MinMaxAttack,
         'minsum': MinSumAttack,
-        'fedsa': FedSAAttack,
-        'second': SecondHighestConfidenceAttack,
-        'rlfl': RLFLAttack,
+        'second': ICSA,
     }
     
     attack_name = attack_name.lower()
@@ -56,16 +50,11 @@ def get_attack(attack_name: str, clients: List, config: Dict[str, Any], runner_i
 __all__ = [
     'NoAttack',
     'CollusionAttackBase',
-    'GaussianAttack',
     'LIEAttack',
     'QLearningAttack',
-    'PoisonedFLAttack',
-    'FangAttack',
     'MinMaxAttack',
     'MinSumAttack',
-    'FedSAAttack',
-    'SecondHighestConfidenceAttack',
-    'RLFLAttack',
+    'ICSA',
     'get_attack',
 ]
 
