@@ -6,16 +6,11 @@
 
 from typing import List, Dict, Any
 from .base import NoAttack, CollusionAttackBase
-from .gaussian_attack import GaussianAttack
 from .lie_attack import LIEAttack
-from .qlearning_attack import QLearningAttack
-from .poisonedfl_attack import PoisonedFLAttack
-from .fang_attack import FangAttack
+from .RLattack import QLearningAttack
 from .minmax_attack import MinMaxAttack
 from .minsum_attack import MinSumAttack
-from .fedsa_attack import FedSAAttack
-from .secondhighestconfidence_attack import SecondHighestConfidenceAttack
-from .RLFL import RLFLAttack
+from .ICSA import ICSA
 
 
 def get_attack(attack_name: str, clients: List, config: Dict[str, Any], runner_instance):
