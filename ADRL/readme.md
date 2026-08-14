@@ -47,6 +47,11 @@ python main.py --dataset cifar10 --arch resnet18 --n_clients 50 --n_communicatio
 - `--n_communications`: Number of communication rounds
 - `--n_total_local_epochs`: Total number of local training epochs
 - `--batch_size`: Batch size
+- `--attack`: The attack method to be used
+- `--defence`: The defence method to be used
+
+    
+
 
 ## Configuration
 
