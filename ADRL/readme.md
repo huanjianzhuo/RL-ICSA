@@ -116,6 +116,7 @@ The project supports multiple Byzantine attack and defense methods.
 2. Adjust the batch size according to the dataset size.
 3. The performance of federated learning depends on the number of clients and communication rounds.
 4. Small-scale tests are recommended before running large-scale experiments.
+5.  ⚠️ Note on Datasets: To keep the repository lightweight, raw dataset files are not included in this repository. Please follow the instructions below to download and place the required datasets before running experiments.
 
 ## License
 
