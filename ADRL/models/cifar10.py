@@ -1,7 +1,7 @@
 # ===========================================================================
 # Project:      ADRL - Adversarial Deep Reinforcement Learning
 # File:         models/cifar10.py
-# Description:  CNN model definitions
+# Description:  model definitions
 # ===========================================================================
 
 import torch
