@@ -1,7 +1,7 @@
 # ===========================================================================
 # Project:      ADRL - Adversarial Deep Reinforcement Learning
 # File:         actors.py
-# Description:  客户端和服务器Actor类
+# Description:  Client and Server Actor classes
 # ===========================================================================
 
 import importlib
@@ -19,45 +19,45 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.cuda.amp import autocast, GradScaler
 from models import cifar10
-from utilities import WarmupLRWrapper,SequentialSchedulers
+from utilities import WarmupLRWrapper, SequentialSchedulers
 
 logger = logging.getLogger(__name__)
 
 
 class Actor(ABC):
-    """Actor基类，定义客户端和服务器的通用接口"""
+    """Base Actor class defining common interfaces for clients and servers."""
 
     def __init__(self, use_amp, **kwargs):
         self.use_amp = use_amp
-        self.n_classes =kwargs['n_classes']
+        self.n_classes = kwargs['n_classes']
         self.tmp_dir = kwargs['tmp_dir']
-        self.num_workers =kwargs['num_workers']
+        self.num_workers = kwargs['num_workers']
         self.config = kwargs['config']
         self.callbacks = kwargs['callbacks']
         self.device = kwargs['device']
         
-        # 模型相关
+        # Model related
         self.model = None
         self.optimizer = None
         self.scheduler = None
         self.loss_criterion = nn.CrossEntropyLoss()
         self.gradScaler = GradScaler() if use_amp else None
         
-        # 数据相关
+        # Data related
         self.dataloader = None
         self.trainData = None
         
-        # 指标相关
+        # Metrics related
         self.metrics = {}
         self.best_checkpoint_val_accuracy = 0.0
         
-        # 检查点相关
+        # Checkpoint related
         self.checkpoint_path = None
         self.best_model_state = None
         self.best_optimizer_state = None
 
     def set_model(self, reinit: bool = False, fileName: Optional[str] = None):
-        """设置模型"""
+        """Sets the model."""
 
         if reinit:
             model_cls = getattr(importlib.import_module('models.' + self.config['dataset']), self.config['arch'])
@@ -102,9 +102,8 @@ class Actor(ABC):
             model.load_state_dict(new_state_dict)
         self.model = model.to(device=self.device)
 
-
     def reset_averaged_metrics(self):
-        """重置平均指标"""
+        """Resets averaged metrics."""
         self.metrics = {
             'train': {'loss': 0.0, 'accuracy': 0.0, 'num_samples': 0},
             'val': {'loss': 0.0, 'accuracy': 0.0, 'num_samples': 0},
@@ -113,7 +112,7 @@ class Actor(ABC):
 
     @torch.no_grad()
     def update_batch_metrics(self, mode: str, loss: torch.Tensor, output: torch.Tensor, y_target: torch.Tensor):
-        """更新批次指标"""
+        """Updates batch metrics."""
         if mode not in self.metrics:
             self.metrics[mode] = {'loss': 0.0, 'accuracy': 0.0, 'num_samples': 0}
         
@@ -121,14 +120,14 @@ class Actor(ABC):
         self.metrics[mode]['loss'] += loss.item() * batch_size
         self.metrics[mode]['num_samples'] += batch_size
         
-        # 计算准确率
+        # Calculate accuracy
         if y_target is not None:
             pred = output.argmax(dim=1)
             correct = pred.eq(y_target).sum().item()
             self.metrics[mode]['accuracy'] += correct
 
     def get_metrics(self) -> Dict[str, Dict[str, float]]:
-        """获取平均指标"""
+        """Gets averaged metrics."""
         averaged_metrics = {}
         for mode, metrics in self.metrics.items():
             if metrics['num_samples'] > 0:
@@ -141,7 +140,7 @@ class Actor(ABC):
         return averaged_metrics
 
     def update_checkpoint(self):
-        """更新检查点"""
+        """Updates checkpoint."""
         val_metrics = self.metrics.get('val', {})
         val_accuracy = val_metrics.get('accuracy', 0.0)
         
@@ -151,9 +150,8 @@ class Actor(ABC):
             if self.optimizer is not None:
                 self.best_optimizer_state = self.optimizer.state_dict().copy()
 
-
     def reset_val_and_test_metrics(self):
-        """重置验证和测试指标"""
+        """Resets validation and test metrics."""
         self.metrics['val'] = {'loss': 0.0, 'accuracy': 0.0, 'num_samples': 0}
         self.metrics['test'] = {'loss': 0.0, 'accuracy': 0.0, 'num_samples': 0}
 
@@ -174,7 +172,7 @@ class Client(Actor):
         self.original_loss = None
         self.is_byzantine = False
 
-        # Q-Learning攻击相关（仅用于拜占庭客户端）
+        # Q-Learning attack related (used for Byzantine clients only)
         self.q_network = None
         self.q_target_network = None
         self.q_optimizer = None
@@ -289,7 +287,7 @@ class Client(Actor):
             do_warmup (bool): If True, warmup for 5% of iterations
             reinit_optimizer (bool): If True, reinit the optimizer, otherwise keep.
         """
-        # 如果learning_rate是数值，转换为Constant调度器格式
+        # If learning_rate is numerical, convert to Constant scheduler format
         if isinstance(learning_rate, (int, float)):
             learning_rate = f"(Constant, {learning_rate})"
         
