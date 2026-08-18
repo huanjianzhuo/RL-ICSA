@@ -1,14 +1,14 @@
 # ===========================================================================
 # Project:      ADRL - Adversarial Deep Reinforcement Learning
 # File:         config.py
-# Description:  数据集、标准化和变换配置
+# Description:  Configurations for datasets, normalization, and transforms
 # ===========================================================================
 
 import torch
 import torchvision
 from torchvision import transforms
 
-# 数据集均值和标准差
+# Dataset means and standard deviations
 means = {
     'cifar10': (0.4914, 0.4822, 0.4465),
     'cifar100': (0.5071, 0.4867, 0.4408),
@@ -23,7 +23,7 @@ stds = {
     'fashionmnist': (0.3530,),
 }
 
-# 类别数量
+# Number of classes
 n_classesDict = {
     'mnist': 10,
     'cifar10': 10,
@@ -31,7 +31,7 @@ n_classesDict = {
     'fashionmnist': 10,
 }
 
-# 数据加载器工作线程数
+# Number of data loader workers
 num_workersDict = {
     'mnist': 2 if torch.cuda.is_available() else 0,
     'cifar10': 2 if torch.cuda.is_available() else 0,
@@ -39,7 +39,7 @@ num_workersDict = {
     'fashionmnist': 2 if torch.cuda.is_available() else 0,
 }
 
-# 数据集字典
+# Dataset dictionary
 datasetDict = {
     'mnist': getattr(torchvision.datasets, 'MNIST'),
     'cifar10': getattr(torchvision.datasets, 'CIFAR10'),
@@ -47,7 +47,7 @@ datasetDict = {
     'fashionmnist': getattr(torchvision.datasets, 'FashionMNIST'),
 }
 
-# 训练数据变换
+# Training data transforms
 trainTransformDict = {
     'mnist': transforms.Compose([
         transforms.ToTensor(),
@@ -72,7 +72,7 @@ trainTransformDict = {
     ]),
 }
 
-# 测试数据变换
+# Testing data transforms
 testTransformDict = {
     'mnist': transforms.Compose([
         transforms.ToTensor(),
@@ -91,5 +91,3 @@ testTransformDict = {
         transforms.Normalize(mean=means['fashionmnist'], std=stds['fashionmnist'])
     ]),
 }
-
-
