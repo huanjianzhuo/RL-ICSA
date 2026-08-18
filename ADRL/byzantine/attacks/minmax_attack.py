@@ -1,7 +1,7 @@
-﻿# ===========================================================================
+# ===========================================================================
 # Project:      ADRL - Adversarial Deep Reinforcement Learning
 # File:         byzantine/attacks/minmax_attack.py
-# Description:  MinMax攻击
+# Description:  MinMax Attack
 # ===========================================================================
 
 import torch
@@ -15,146 +15,98 @@ logger = logging.getLogger(__name__)
 
 class MinMaxAttack(CollusionAttackBase):
     """
-    AGR-agnostic Min-Max 攻击（Attack-1）
-    最小化最大距离攻击：确保恶意梯度到任意良性梯度的最大距离不超过良性梯度之间的最大距离
+    AGR-agnostic Min-Max Attack (Attack-1)
+    Minimizes maximum distance: ensures the maximum distance between a malicious
+    gradient and any benign gradient does not exceed the maximum distance among benign gradients.
     
-    优化目标：
+    Optimization Objective:
     argmax_γ max_{i∈[n]} ||∇^m - ∇_i||_2 ≤ max_{i,j∈[n]} ||∇_i - ∇_j||_2
     
-    策略：
-    1. 收集所有良性客户端的梯度
-    2. 计算良性梯度的平均值 g_b
-    3. 选择扰动方向 p = -g_b (反向攻击)
-    4. 对每个良性梯度 g_j，计算成对最大距离约束
-    5. 求解二次不等式得到 gamma 上界
-    6. 选择所有约束的最小值作为最终 gamma
-    7. 生成恶意梯度：∇^m = g_b + γ * p
+    Strategy:
+    1. Collect gradients from all benign clients.
+    2. Compute the mean of benign gradients g_b.
+    3. Choose perturbation direction p = -g_b (reverse direction attack).
+    4. For each benign gradient g_j, compute pairwise maximum distance constraints.
+    5. Solve quadratic inequality to obtain the upper bound for gamma.
+    6. Select the minimum across all constraints as the final gamma.
+    7. Generate malicious gradient: ∇^m = g_b + γ * p
     """
     
     def __init__(self, clients: List, config: Dict[str, Any], runner_instance):
         super().__init__(clients, config, runner_instance)
-        self.safety_margin = config.get('minmax_safety_margin', 0.95)  # 安全边界（避免边界条件）
-    
-    def _get_params_vector(self, model: torch.nn.Module) -> torch.Tensor:
-        """将模型参数展平为一维向量"""
-        return torch.cat([p.data.view(-1) for p in model.parameters()])
-    
-    def _set_params_vector(self, model: torch.nn.Module, vec: torch.Tensor) -> None:
-        """从一维向量恢复模型参数"""
-        pointer = 0
-        for p in model.parameters():
-            n = p.numel()
-            p.data = vec[pointer:pointer+n].view_as(p.data)
-            pointer += n
-    
-    def _get_global_vector(self) -> torch.Tensor:
-        """获取全局模型参数向量"""
-        if hasattr(self.runner, 'server') and self.runner.server is not None:
-            return torch.cat([p.data.view(-1) for p in self.runner.server.model.parameters()])
-        return self._get_params_vector(self.clients[0].model)
-    
-    def _collect_benign_gradients(self) -> Tuple[torch.Tensor, torch.Tensor, list]:
-        """
-        收集良性客户端的梯度信息
+        self.safety_margin = config.get('minmax_safety_margin', 0.99)  # Safety factor to prevent numerical overflow
+        self.dev_type = config.get('minmax_dev_type', 'unit_vec')  # Perturbation direction: 'unit_vec' (opposite direction) or 'sign'
         
-        Returns:
-            Tuple[torch.Tensor, torch.Tensor, list]: 
-                - old_vec: 全局模型参数向量
-                - g_b: 良性梯度平均值
-                - grads: 良性梯度列表
-        """
-        old_vec = self._get_global_vector().detach().cpu()
-        grads = []
-        
-        for c in self.benign_clients:
-            if getattr(c, 'model', None) is None:
-                continue
-            w = self._get_params_vector(c.model).detach().cpu()
-            grads.append(w - old_vec)
-        
-        if not grads:
-            return old_vec, None, []
-        
-        G = torch.stack(grads, dim=0)
-        g_b = G.mean(dim=0)
-        
-        return old_vec, g_b, grads
-    
     def _generate_attack_params(self, client, agent_id: int) -> torch.Tensor:
         """
-        生成 Min-Max 攻击参数
+        Generates MinMax attack parameters.
         
-        根据论文 Attack-1 (Min-Max):
-        目标: argmax_γ max_{i∈[n]} ||∇^m - ∇_i||_2 ≤ max_{i,j∈[n]} ||∇_i - ∇_j||_2
-        生成: ∇^m = f_avg(∇_{i∈[n]}) + γ∇^p
+        Calculates optimal scaling factor gamma based on benign gradients collected via communicator.
         
-        核心思路：
-        1. 计算良性梯度平均值 f_avg(∇_{i∈[n]}) = g_b
-        2. 选择扰动方向 ∇^p = -g_b（反向攻击，最大化破坏）
-        3. 对每个良性客户端 j，计算约束：
-           ||(g_b + γ∇^p) - ∇_j||^2 ≤ D_j_max
-           其中 D_j_max = max_i ||∇_i - ∇_j||^2
-        4. 求解二次不等式得到 gamma 上界
-        5. 选择所有约束的最小值（确保满足所有约束）
-        6. 生成恶意梯度: ∇^m = g_b + γ∇^p
+        Returns:
+            torch.Tensor: Malicious local update parameters (vector).
         """
-        old_vec, g_b, grads = self._collect_benign_gradients()
+        # Get flattened local updates from all benign clients from communicator
+        benign_updates = self.communicator.get_all_benign_flat_updates()
         
-        if g_b is None:
+        if len(benign_updates) == 0:
+            logger.warning("No benign updates available, cannot perform MinMax attack.")
             return None
+            
+        # Stack into matrix [m, d], where m is the number of benign clients and d is the parameter dimension
+        G = torch.stack(benign_updates).to(self.device)  # [m, d]
         
-        # 扰动方向 ∇^p：选择负的良性平均梯度（反向攻击）
-        # 这样可以最大化对模型收敛的破坏
-        perturbation = -g_b
-        p_norm2 = torch.dot(perturbation, perturbation).item() + 1e-12
+        # 1. Compute mean of benign gradients g_b
+        g_b = torch.mean(G, dim=0)  # [d]
         
-        # 计算每个良性客户端的成对最大距离 D_j_max
-        G = torch.stack(grads, dim=0)  # [m, d] 其中 m 是良性客户端数量
+        # 2. Determine perturbation direction
+        if self.dev_type == 'unit_vec':
+            # Reverse direction: -g_b normalized or directly using -g_b
+            perturbation = -g_b
+        elif self.dev_type == 'sign':
+            # -sign(g_b)
+            perturbation = -torch.sign(g_b)
+        elif self.dev_type == 'std':
+            # -std(G)
+            perturbation = -torch.std(G, dim=0)
+        else:
+            perturbation = -g_b
+            
+        # Normalize perturbation direction or keep original scale
+        p_norm2 = float(torch.dot(perturbation, perturbation).item())
+        if p_norm2 < 1e-12:
+            logger.warning("Perturbation vector norm is too small, returning benign mean.")
+            return g_b
+            
+        # 3. Compute pairwise maximum distance among benign gradients D_j_max
+        # D_j_max[j] = max_k ||∇_j - ∇_k||^2
         D_j_max = []
         for j in range(G.size(0)):
-            # 计算 max_i ||∇_i - ∇_j||^2
             diff = G - G[j]  # [m, d]
-            D_j_max.append(torch.max((diff*diff).sum(dim=1)).item())
+            D_j_max.append(torch.max((diff * diff).sum(dim=1)).item())
         
-        # 对每个良性客户端 j 求解二次约束
-        # 约束: ||(g_b + γ∇^p) - ∇_j||^2 ≤ D_j_max
-        # 展开: ||g_b - ∇_j||^2 + 2γ(g_b - ∇_j)·∇^p + γ^2||∇^p||^2 ≤ D_j_max
-        # 整理: a*γ^2 + b*γ + c ≤ 0
+        # Solve quadratic constraint for each benign client j
+        # Constraint: ||(g_b + γ∇^p) - ∇_j||^2 ≤ D_j_max
+        # Expansion: ||g_b - ∇_j||^2 + 2γ(g_b - ∇_j)·∇^p + γ^2||∇^p||^2 ≤ D_j_max
+        # Formulate: a*γ^2 + b*γ + c ≤ 0
         gamma_bounds = []
         for j in range(G.size(0)):
             gb_minus_gj = (g_b - G[j]).detach()
             
-            # 二次方程系数
+            # Quadratic coefficients
             a = p_norm2  # ||∇^p||^2
             b = 2.0 * torch.dot(perturbation, gb_minus_gj).item()  # 2(g_b - ∇_j)·∇^p
             c = float(torch.dot(gb_minus_gj, gb_minus_gj).item() - D_j_max[j])  # ||g_b - ∇_j||^2 - D_j_max
             
-            # 求解判别式
-            disc = b*b - 4*a*c
+            # Solve discriminant
+            disc = b * b - 4 * a * c
             if disc <= 0 or a <= 0:
                 gamma_bounds.append(0.0)
                 continue
             
-            # 求两个根，选择较大的作为上界
-            root1 = (-b - np.sqrt(disc)) / (2*a)
-            root2 = (-b + np.sqrt(disc)) / (2*a)
-            upper = max(root1, root2)
-            gamma_bounds.append(max(0.0, upper))
-        
-        if not gamma_bounds:
-            return None
-        
-        # 选择最小的 gamma（满足所有约束）
-        gamma = max(0.0, min(gamma_bounds))
-        gamma = float(gamma * self.safety_margin)  # 应用安全边界，避免数值问题
-        
-        # 生成恶意梯度: ∇^m = f_avg(∇_{i∈[n]}) + γ∇^p
-        malicious_gradient = g_b + gamma * perturbation
-        
-        # 最终恶意参数: w^m = w_old + ∇^m
-        crafted = old_vec + malicious_gradient
-        
-        return crafted
-
-
-
+            # Find both roots and select the larger positive root as upper bound
+            gamma2 = (-b + np.sqrt(disc)) / (2.0 * a)
+            if gamma2 > 0:
+                gamma_bounds.append(gamma2)
+            else:
+                gamma_bounds.append(0.0
